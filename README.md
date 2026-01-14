@@ -1,8 +1,18 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Pavelevich/privatepussy/main/assets/logo.png" alt="Private Pussy" width="120" />
-</p>
-
-<h1 align="center">PRIVATE PUSSY</h1>
+<h1 align="center">
+<pre>
+         ,_     _
+         |\\,-~/
+         / _  _ |    ,--.
+        (  @  @ )   / ,-'
+         \  _T_/-._( (
+         /         `. \
+        |         _  \ |
+         \ \ ,  /      |
+          || |-_\__   /
+         ((_/`(____,-'
+</pre>
+PRIVATE PUSSY
+</h1>
 
 <p align="center">
   <strong>ZK Privacy Tools for Solana</strong>
