@@ -1,15 +1,6 @@
 <h1 align="center">
 <pre>
-         ,_     _
-         |\\,-~/
-         / _  _ |    ,--.
-        (  @  @ )   / ,-'
-         \  _T_/-._( (
-         /         `. \
-        |         _  \ |
-         \ \ ,  /      |
-          || |-_\__   /
-         ((_/`(____,-'
+     <img width="522" height="199" alt="Screenshot 2026-01-14 at 18 24 15" src="https://github.com/user-attachments/assets/4d386041-47ca-44bd-9dc0-e572dc3d320f" />
 </pre>
 PRIVATE PUSSY
 </h1>
