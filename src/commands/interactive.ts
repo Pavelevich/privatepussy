@@ -23,18 +23,57 @@ import * as crypto from "crypto";
 // Light Protocol imports for ZK compression
 import { createRpc, compress, decompress } from "@lightprotocol/stateless.js";
 
-const HELIUS_RPC = "https://mainnet.helius-rpc.com/?api-key=40067999-16c1-4b5a-95a3-fa46f6dcdc21";
-const HELIUS_API_KEY = "40067999-16c1-4b5a-95a3-fa46f6dcdc21";
+// Get Helius API key from environment or settings
+function getHeliusApiKey(): string | null {
+  // Check environment variable first
+  if (process.env.HELIUS_API_KEY) {
+    return process.env.HELIUS_API_KEY;
+  }
+  // Check settings file
+  const settings = loadSettings();
+  if (settings.heliusApiKey) {
+    return settings.heliusApiKey;
+  }
+  return null;
+}
+
+// Public RPC endpoints (rate limited but work without API key)
+const PUBLIC_RPC_MAINNET = "https://api.mainnet-beta.solana.com";
+const PUBLIC_RPC_DEVNET = "https://api.devnet.solana.com";
+
 const RENT_EXEMPT_LAMPORTS = 2039280;
 
-// Light Protocol RPC URLs (ZK Compression)
-const LIGHT_RPC_DEVNET = `https://devnet.helius-rpc.com?api-key=${HELIUS_API_KEY}`;
-const LIGHT_RPC_MAINNET = `https://mainnet.helius-rpc.com?api-key=${HELIUS_API_KEY}`;
+// Get RPC URL based on settings and API key availability
+function getHeliusRpc(): string {
+  const apiKey = getHeliusApiKey();
+  const settings = loadSettings();
+
+  if (apiKey) {
+    return settings.network === "mainnet"
+      ? `https://mainnet.helius-rpc.com?api-key=${apiKey}`
+      : `https://devnet.helius-rpc.com?api-key=${apiKey}`;
+  }
+
+  // Fallback to public RPC (limited features)
+  return settings.network === "mainnet" ? PUBLIC_RPC_MAINNET : PUBLIC_RPC_DEVNET;
+}
+
+// Light Protocol requires Helius RPC
+function getLightRpcWithKey(): string | null {
+  const apiKey = getHeliusApiKey();
+  if (!apiKey) return null;
+
+  const settings = loadSettings();
+  return settings.network === "mainnet"
+    ? `https://mainnet.helius-rpc.com?api-key=${apiKey}`
+    : `https://devnet.helius-rpc.com?api-key=${apiKey}`;
+}
 
 // Settings configuration
 interface AppSettings {
   network: "devnet" | "mainnet";
   customRpc?: string;
+  heliusApiKey?: string;
 }
 
 const SETTINGS_PATH = path.join(process.env.HOME || "", ".pussycat/settings.json");
@@ -56,10 +95,10 @@ function saveSettings(settings: AppSettings): void {
   fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
 }
 
-function getLightRpc(): string {
+function getLightRpc(): string | null {
   const settings = loadSettings();
   if (settings.customRpc) return settings.customRpc;
-  return settings.network === "mainnet" ? LIGHT_RPC_MAINNET : LIGHT_RPC_DEVNET;
+  return getLightRpcWithKey();
 }
 
 function getNetworkName(): string {
@@ -272,7 +311,7 @@ async function fetchTokenMetadata(mints: string[]): Promise<Map<string, TokenMet
 
   try {
     // Use DAS API (getAssetBatch) - works better for pump.fun tokens
-    const response = await fetch(HELIUS_RPC, {
+    const response = await fetch(getHeliusRpc(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -872,7 +911,7 @@ async function scanWallet() {
   const spinner = ora("Scanning wallet...").start();
 
   try {
-    const connection = new Connection(HELIUS_RPC, "confirmed");
+    const connection = new Connection(getHeliusRpc(), "confirmed");
     const pubkey = new PublicKey(walletAddress);
 
     // Fetch native SOL balance
@@ -1046,7 +1085,7 @@ async function cleanWallet() {
   const spinner = ora("Scanning wallet...").start();
 
   try {
-    const connection = new Connection(HELIUS_RPC, "confirmed");
+    const connection = new Connection(getHeliusRpc(), "confirmed");
     const pubkey = new PublicKey(walletAddress);
 
     const tokenAccounts = await connection.getParsedTokenAccountsByOwner(pubkey, {
@@ -1290,7 +1329,7 @@ async function viewSummary() {
   const spinner = ora("Analyzing wallet...").start();
 
   try {
-    const connection = new Connection(HELIUS_RPC, "confirmed");
+    const connection = new Connection(getHeliusRpc(), "confirmed");
     const pubkey = new PublicKey(walletAddress);
 
     const tokenAccounts = await connection.getParsedTokenAccountsByOwner(pubkey, {
@@ -1353,10 +1392,12 @@ async function showSettings() {
       ? fs.readdirSync(walletsDir).filter(f => f.endsWith(".json")).length
       : 0;
 
+    const hasApiKey = !!getHeliusApiKey();
+
     console.log("\n" + box(
       `${chalk.bold("Current Settings")}\n\n` +
       `${chalk.gray("Network:")} ${settings.network === "mainnet" ? chalk.green("Mainnet") : chalk.yellow("Devnet")}\n` +
-      `${chalk.gray("RPC:")} ${chalk.cyan(rpcUrl.split("?")[0])}...\n` +
+      `${chalk.gray("Helius API:")} ${hasApiKey ? chalk.green("Configured") : chalk.red("Not set")}\n` +
       `${chalk.gray("Saved Wallets:")} ${chalk.white(walletCount.toString())}`
     ));
 
@@ -1371,14 +1412,14 @@ async function showSettings() {
             description: "Toggle between Devnet and Mainnet",
           },
           {
+            name: `${hasApiKey ? chalk.cyan("›") : chalk.yellow("!")} Helius API Key ${chalk.gray(hasApiKey ? "(configured)" : "(required for Shield)")}`,
+            value: "apikey",
+            description: "Set Helius API key for Light Protocol",
+          },
+          {
             name: `${chalk.cyan("›")} Manage Wallets`,
             value: "wallets",
             description: "View and manage encrypted wallets",
-          },
-          {
-            name: `${chalk.cyan("›")} Custom RPC`,
-            value: "rpc",
-            description: "Set a custom RPC endpoint",
           },
           {
             name: `${chalk.gray("←")} Back ${chalk.gray("(ESC)")}`,
@@ -1394,10 +1435,10 @@ async function showSettings() {
 
     if (action === "network") {
       await switchNetwork();
+    } else if (action === "apikey") {
+      await setHeliusApiKey();
     } else if (action === "wallets") {
       await manageWallets();
-    } else if (action === "rpc") {
-      await setCustomRpc();
     }
   }
 }
@@ -1446,6 +1487,39 @@ async function switchNetwork() {
   settings.network = newNetwork as "devnet" | "mainnet";
   saveSettings(settings);
   console.log(chalk.green(`\n  ✓ Network switched to ${newNetwork}\n`));
+}
+
+// Set Helius API key
+async function setHeliusApiKey() {
+  const currentKey = getHeliusApiKey();
+
+  console.log("\n" + box(
+    `${chalk.bold("Helius API Key")}\n\n` +
+    `${chalk.gray("Required for Shield/Unshield (Light Protocol ZK compression)")}\n` +
+    `${chalk.gray("Get a free key at:")} ${chalk.cyan("https://helius.dev")}`,
+    chalk.cyan
+  ));
+
+  if (currentKey) {
+    console.log(chalk.gray(`\n  Current: ${currentKey.slice(0, 8)}...${currentKey.slice(-4)}\n`));
+  }
+
+  const apiKey = await input({
+    message: "Enter Helius API key (or leave empty to clear):",
+    default: "",
+  });
+
+  const settings = loadSettings();
+
+  if (apiKey.trim() === "") {
+    delete settings.heliusApiKey;
+    saveSettings(settings);
+    console.log(chalk.yellow("\n  API key cleared. Set HELIUS_API_KEY env var or reconfigure.\n"));
+  } else {
+    settings.heliusApiKey = apiKey.trim();
+    saveSettings(settings);
+    console.log(chalk.green("\n  ✓ Helius API key saved!\n"));
+  }
 }
 
 // Manage saved wallets
@@ -1597,6 +1671,17 @@ async function lightShield() {
     return;
   }
 
+  // Check for Helius API key (required for Light Protocol)
+  if (!getHeliusApiKey()) {
+    console.log(chalk.red("\n  ⚠ Helius API key required for Shield/Unshield."));
+    console.log(chalk.gray("  Light Protocol requires Helius RPC for ZK compression.\n"));
+    console.log(chalk.cyan("  Set your API key:"));
+    console.log(chalk.gray("  • Environment: export HELIUS_API_KEY=your-key"));
+    console.log(chalk.gray("  • Or: Settings → Set Helius API Key\n"));
+    console.log(chalk.gray("  Get a free key at: https://helius.dev\n"));
+    return;
+  }
+
   // Select keypair with encryption support
   const keypair = await selectKeypair();
   if (!keypair) return;
@@ -1606,7 +1691,7 @@ async function lightShield() {
   let balance: number;
 
   try {
-    const rpc = createRpc(getLightRpc(), getLightRpc(), getLightRpc());
+    const rpc = createRpc(getLightRpc()!, getLightRpc()!, getLightRpc()!);
     balance = await rpc.getBalance(keypair.publicKey);
     spinner.stop();
   } catch (e) {
@@ -1657,7 +1742,7 @@ async function lightShield() {
 
   try {
     // Create Light Protocol RPC connection
-    const rpc = createRpc(getLightRpc(), getLightRpc(), getLightRpc());
+    const rpc = createRpc(getLightRpc()!, getLightRpc()!, getLightRpc()!);
     spinner.succeed("Connected to Light Protocol");
 
     // Compress SOL
@@ -1710,6 +1795,17 @@ async function lightUnshield() {
     return;
   }
 
+  // Check for Helius API key (required for Light Protocol)
+  if (!getHeliusApiKey()) {
+    console.log(chalk.red("\n  ⚠ Helius API key required for Shield/Unshield."));
+    console.log(chalk.gray("  Light Protocol requires Helius RPC for ZK compression.\n"));
+    console.log(chalk.cyan("  Set your API key:"));
+    console.log(chalk.gray("  • Environment: export HELIUS_API_KEY=your-key"));
+    console.log(chalk.gray("  • Or: Settings → Set Helius API Key\n"));
+    console.log(chalk.gray("  Get a free key at: https://helius.dev\n"));
+    return;
+  }
+
   // Select keypair with encryption support
   const keypair = await selectKeypair();
   if (!keypair) return;
@@ -1759,7 +1855,7 @@ async function lightUnshield() {
 
   try {
     // Create Light Protocol RPC connection
-    const rpc = createRpc(getLightRpc(), getLightRpc(), getLightRpc());
+    const rpc = createRpc(getLightRpc()!, getLightRpc()!, getLightRpc()!);
     spinner.succeed("Connected to Light Protocol");
 
     // Check compressed balance
@@ -1849,7 +1945,7 @@ async function lightBalance() {
   const spinner = ora("Connecting to Light Protocol...").start();
 
   try {
-    const rpc = createRpc(getLightRpc(), getLightRpc(), getLightRpc());
+    const rpc = createRpc(getLightRpc()!, getLightRpc()!, getLightRpc()!);
     const wallet = new PublicKey(walletAddress);
 
     spinner.text = "Fetching compressed accounts...";

@@ -42,6 +42,21 @@ npm install -g privatepussy
 privatepussy
 ```
 
+## Setup
+
+### Helius API Key (Required for Shield/Unshield)
+
+Privacy Migration requires a Helius API key (free tier available):
+
+1. Get a free key at [helius.dev](https://helius.dev)
+2. Set it via environment variable:
+   ```bash
+   export HELIUS_API_KEY=your-api-key
+   ```
+   Or configure in the CLI: `Settings → Helius API Key`
+
+> **Note:** Wallet scanning works without an API key (uses public RPC).
+
 ## How It Works
 
 ### 1. Privacy Migration (Shield/Unshield)
